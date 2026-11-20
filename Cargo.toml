@@ -1,0 +1,35 @@
+[package]
+name = "hostline"
+version = "0.1.0"
+edition = "2024"
+description = "Your localhost as a link: any port on your machine, opened in any browser over WebRTC, with no tunnel server."
+repository = "https://github.com/luannzin/hostline"
+homepage = "https://hostline.luannzin.com"
+
+[dependencies]
+aes-gcm = "0.11.1"
+anyhow = "1.0.104"
+# Clipboard straight from the OS, so the link is copied in any terminal.
+arboard = { version = "3", default-features = false }
+async-trait = "0.1.92"
+base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
+bytes = "1.12.2"
+futures-util = "0.3.34"
+hkdf = "0.13.0"
+nostr-sdk = "0.45"
+qrcode = { version = "0.15", default-features = false }
+rand = "0.9"
+# Decompresses what the shared port sends, since the page can't hand a compressed body to the frame.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "cookies", "http2", "gzip", "brotli", "zstd", "deflate"] }
+# Only to pick ring as the one TLS backend (WebRTC and the relays pull in two).
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+tokio = { version = "1.54.1", features = ["full"] }
+tokio-tungstenite = "0.30"
+webrtc = "0.21"
+
+[profile.release]
+lto = "thin"
+strip = true
