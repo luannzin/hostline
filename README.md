@@ -6,10 +6,11 @@ Your localhost as a link.
 hostline 5173
 ```
 
-Hostline prints a link and a QR code. Whoever opens the link gets that port in their browser,
-loaded straight from your machine: your dev server on your phone over mobile data, a production
-build for a friend, a local tool for someone across the city. They install nothing and make no
-account, and there's no tunnel server carrying your traffic. The link ends when you stop Hostline.
+I wanted my friends to test what I'm building without me deploying it, and to open it on my phone
+without putting the phone and the computer on the same Wi-Fi. So Hostline prints a link and a QR code. Whoever opens the
+link gets that port in their browser, loaded straight from your machine. They install nothing and
+make no account, and there's no tunnel server carrying your traffic. The link ends when you stop
+Hostline.
 
 It works for any port, not only dev servers: `vite`, `next dev`, `next start`, a `vite preview`, a
 Python `http.server`, an API with a page in front of it.
