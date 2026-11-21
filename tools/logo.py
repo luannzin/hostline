@@ -59,7 +59,8 @@ def cell(x, y, spin):
     """Which grid cell the globe shows at pixel (x, y), or None off the globe."""
     dx, up = (x + 0.5 - CX) / R, (CY - y - 0.5) / R
     d2 = dx * dx + up * up
-    if d2 > 1:
+    # just under 1: a pixel circle with no lone pixel sticking out at its four ends
+    if d2 > 0.98:
         return None
     nz = math.sqrt(1 - d2)
     lat = math.asin(up * math.cos(TILT) + nz * math.sin(TILT))
@@ -105,14 +106,18 @@ def mark(spin=0.0, state="dusk", spark=0.3):
             px[gx, gy] = WALL_LIT
     # the spark: a bright head running the equator's front, its tail fading behind it
     if state != "out":
+        # only where the globe is, so the spark never pokes past its rim
+        def put(x, y, c):
+            if cell(x, y, spin) is not None:
+                px[x, y] = c
+
         lon = (spark - 0.5) * math.pi * 0.9
         for i, c in enumerate((WALL_LIT, DUSK[3], DUSK[3], DUSK[2], DUSK[1])):
-            px[on_equator(lon - i * 0.09)] = c
+            put(*on_equator(lon - i * 0.09), c)
         hx, hy = on_equator(lon)
         for ox, oy in ((0, -1), (0, 1), (1, 0), (-1, 0)):
-            if px[hx + ox, hy + oy] != WALL_LIT:
-                px[hx + ox, hy + oy] = DUSK[3]
-        px[hx, hy] = WALL_LIT
+            put(hx + ox, hy + oy, DUSK[3])
+        put(hx, hy, WALL_LIT)
     # the family's dark outline: every clear pixel touching the art
     art = [[px[x, y][3] > 0 for x in range(32)] for y in range(32)]
     for y in range(32):
