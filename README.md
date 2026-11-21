@@ -1,6 +1,15 @@
-# Hostline
+<p align="center">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="assets/banner.png">
+    <img src="assets/banner.webp" alt="Hostline: your localhost as a link" width="100%">
+  </picture>
+</p>
 
-Your localhost as a link.
+<p align="center">
+  <a href="#use-it"><b>Use it</b></a> ·
+  <a href="#install">Install</a> ·
+  <a href="#how-it-works">How it works</a>
+</p>
 
 ```
 hostline 5173
@@ -97,6 +106,9 @@ the port you share ◄── hostline (CLI) ◄──────► hostline.lu
 cargo run -- 5173
 cargo test
 ```
+
+`python tools/logo.py` redraws the mark, the banner and the link preview into `assets/` (needs
+Pillow).
 
 `HOSTLINE_SHELL` points the CLI at another copy of the page (the `lines` repository serves it),
 for example `HOSTLINE_SHELL=http://hostline.localhost:3100/` while working on the page locally.
