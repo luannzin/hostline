@@ -58,7 +58,8 @@ const child = spawn(bin, process.argv.slice(2), {
   stdio: "inherit",
   env: { ...process.env, HOSTLINE_NO_UPDATE: "1" },
 });
-// Ctrl+C reaches Hostline too; it tells open pages the link ended, then exits, and so do we.
-process.on("SIGINT", () => {});
-process.on("SIGTERM", () => child.kill("SIGTERM"));
+// Hostline tells open pages the link ended, then exits, and so do we. In a terminal Ctrl+C
+// reaches it anyway; passing the signal on covers a signal sent to this process alone.
+for (const signal of ["SIGINT", "SIGTERM"])
+  process.on(signal, () => child.kill(signal));
 child.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
