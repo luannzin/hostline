@@ -1,0 +1,99 @@
+name: release
+
+# Every push to main whose Cargo.toml version has no release yet builds Hostline for Linux (x86_64
+# and arm64), Windows and macOS and publishes the binaries as release v<version>; installed copies
+# swap themselves to it on their next run (src/update.rs). To ship: bump `version` in Cargo.toml
+# and npm/package.json, push, then publish npm/ (`npm publish` there) once the release is up.
+# "Run workflow" on the Actions tab builds the same files without publishing.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: release
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      new: ${{ steps.v.outputs.new }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          npm=$(node -p 'require("./npm/package.json").version')
+          # npx hostline downloads the release named by its own version, so the two move together
+          [ "$version" = "$npm" ] || { echo "Cargo.toml is $version, npm/package.json is $npm" >&2; exit 1; }
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: version
+    if: needs.version.outputs.new == 'true' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-22.04 = the oldest glibc we support, so the Linux binaries run on 22.04 and newer.
+        # macos-latest: lipo builds both arches, so the runner's own arch doesn't matter.
+        include:
+          - { os: ubuntu-22.04, asset: hostline-linux-x86_64 }
+          - { os: ubuntu-22.04-arm, asset: hostline-linux-arm64 }
+          - { os: windows-latest, asset: hostline-windows-x86_64.exe }
+          - { os: macos-latest, asset: hostline-macos }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup update stable --no-self-update && rustup default stable
+
+      - name: Linux and Windows
+        if: runner.os != 'macOS'
+        shell: bash
+        run: |
+          cargo test --release
+          cargo build --release
+          mkdir -p dist && cp target/release/hostline$([ "$RUNNER_OS" = Windows ] && echo .exe) "dist/${{ matrix.asset }}"
+
+      - name: macOS (universal binary)
+        if: runner.os == 'macOS'
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+          mkdir -p dist
+          lipo -create -output dist/hostline-macos \
+            target/aarch64-apple-darwin/release/hostline target/x86_64-apple-darwin/release/hostline
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: [version, build]
+    if: github.event_name == 'push' && needs.version.outputs.new == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+        # the asset names are what the install lines, npm/hostline.js and src/update.rs download
+        run: |
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Hostline $TAG" --generate-notes

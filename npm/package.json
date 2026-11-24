@@ -1,0 +1,21 @@
+{
+	"name": "hostline",
+	"version": "0.2.0",
+	"description": "Your localhost as a link: any port on your machine, opened in any browser over WebRTC, with no tunnel server.",
+	"type": "module",
+	"bin": {
+		"hostline": "hostline.js"
+	},
+	"files": ["hostline.js"],
+	"engines": {
+		"node": ">=18"
+	},
+	"keywords": ["localhost", "tunnel", "share", "webrtc", "dev-server", "ngrok-alternative", "p2p"],
+	"homepage": "https://hostline.luannzin.com",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/luannzin/hostline.git"
+	},
+	"bugs": "https://github.com/luannzin/hostline/issues",
+	"author": "luannzin"
+}

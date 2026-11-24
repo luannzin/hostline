@@ -5,6 +5,7 @@
 
 mod peer;
 mod signal;
+mod update;
 
 use std::collections::HashMap;
 use std::net::{SocketAddr, TcpStream};
@@ -18,7 +19,7 @@ use qrcode::QrCode;
 use qrcode::render::unicode::Dense1x2;
 use tokio::sync::{mpsc, watch};
 
-use peer::{Note, Target};
+use peer::{Cookies, Note, Target};
 use signal::{Message, Room};
 
 const SHELL: &str = "https://hostline.luannzin.com/";
@@ -165,10 +166,19 @@ async fn run() -> Result<()> {
 
     let ends = args.duration.map(|d| now_ms() + d.as_millis() as u64);
     print_link(&link, &target.authority, args.duration);
+    // An installed copy swaps itself for a newer release while it runs (src/update.rs).
+    tokio::spawn(async {
+        if let Some(tag) = update::run().await {
+            let line = format!("Hostline {tag} is installed. The next run uses it.");
+            println!("  {}", paint("2", &line));
+        }
+    });
 
     let (end_tx, end_rx) = watch::channel(false);
     let (note_tx, mut notes) = mpsc::unbounded_channel();
     let visitors: Arc<Mutex<HashMap<PublicKey, Visitor>>> = Default::default();
+    // one cookie jar per browser (its `v`), kept across its reloads and tabs until the link ends
+    let jars: Mutex<HashMap<String, Arc<Cookies>>> = Default::default();
     let mut events = client.notifications();
     let deadline = tokio::time::sleep(args.duration.unwrap_or(Duration::from_secs(u32::MAX as u64)));
     tokio::pin!(deadline);
@@ -177,7 +187,7 @@ async fn run() -> Result<()> {
         tokio::select! {
             Some(n) = events.next() => {
                 let ClientNotification::Event { event, .. } = n else { continue };
-                let Ok(Message::Offer { sdp, who }) = room.open(&event.content) else { continue };
+                let Ok(Message::Offer { sdp, who, v }) = room.open(&event.content) else { continue };
                 let from = event.pubkey;
                 let repeat = {
                     let mut v = visitors.lock().unwrap();
@@ -200,8 +210,13 @@ async fn run() -> Result<()> {
                         let (client, keys, room) = (client.clone(), keys.clone(), room.clone());
                         let (target, notes, ending) = (target.clone(), note_tx.clone(), end_rx.clone());
                         let (visitors, name) = (visitors.clone(), name.clone());
+                        let jar = if v.is_empty() {
+                            Default::default()
+                        } else {
+                            jars.lock().unwrap().entry(v).or_default().clone()
+                        };
                         tokio::spawn(async move {
-                            match peer::answer(sdp, who, target, notes, ending).await {
+                            match peer::answer(sdp, who, jar, target, notes, ending).await {
                                 Ok((pc, sdp)) => {
                                     let answer = Arc::new(Message::Answer { to: from.to_hex(), sdp, name, ends });
                                     if let Some(v) = visitors.lock().unwrap().get_mut(&from) {

@@ -34,8 +34,14 @@ const BASE62: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrst
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "t", rename_all = "lowercase")]
 pub enum Message {
-    /// A visitor's offer; `who` is how the visitor's browser names itself ("Safari on iPhone").
-    Offer { sdp: String, who: String },
+    /// A visitor's offer; `who` is how the visitor's browser names itself ("Safari on iPhone"),
+    /// `v` the id that browser keeps for this link, so its cookies outlive a reload.
+    Offer {
+        sdp: String,
+        who: String,
+        #[serde(default)]
+        v: String,
+    },
     /// The host's answer to one visitor, addressed by that visitor's Nostr key.
     Answer {
         to: String,
@@ -127,7 +133,7 @@ mod tests {
     fn seals_and_opens() {
         let room = Room::from_secret("0123456789abcdefABCDEF".into());
         let sealed = room
-            .seal(&Message::Offer { sdp: "v=0".into(), who: "test".into() })
+            .seal(&Message::Offer { sdp: "v=0".into(), who: "test".into(), v: String::new() })
             .unwrap();
         assert!(matches!(room.open(&sealed).unwrap(), Message::Offer { sdp, .. } if sdp == "v=0"));
         assert!(Room::from_secret("x".repeat(22)).open(&sealed).is_err());

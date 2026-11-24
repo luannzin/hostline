@@ -1,6 +1,6 @@
 [package]
 name = "hostline"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Your localhost as a link: any port on your machine, opened in any browser over WebRTC, with no tunnel server."
 repository = "https://github.com/luannzin/hostline"
@@ -14,6 +14,9 @@ arboard = { version = "3", default-features = false }
 async-trait = "0.1.92"
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 bytes = "1.12.2"
+# The jar each visitor's cookies live in (the one reqwest's own uses), read to show the page
+# the cookies its JavaScript may see.
+cookie_store = "0.22"
 futures-util = "0.3.34"
 hkdf = "0.13.0"
 nostr-sdk = "0.45"

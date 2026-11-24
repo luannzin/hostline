@@ -1312,7 +1312,7 @@ dependencies = [
 
 [[package]]
 name = "hostline"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -1320,6 +1320,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "bytes",
+ "cookie_store",
  "futures-util",
  "hkdf",
  "nostr-sdk",

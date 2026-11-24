@@ -27,7 +27,7 @@ Plaintext messages, JSON:
 
 | Message | From | Fields |
 |---|---|---|
-| `{"t":"offer"}` | page | `sdp`: the full offer, ICE gathered; `who`: "Safari on iPhone" |
+| `{"t":"offer"}` | page | `sdp`: the full offer, ICE gathered; `who`: "Safari on iPhone"; `v`: an id the browser keeps for this link, so the CLI gives it the same cookie jar across reloads and tabs (empty: a jar of its own) |
 | `{"t":"answer"}` | CLI | `to`: the page's Nostr key (hex); `sdp`: the full answer; `name`: the folder the CLI runs in; `ends`: Unix ms, only with `--for` |
 
 The page signs with a key made per page load and sends its offer every 4 seconds until an answer
@@ -53,7 +53,7 @@ at most 16 KiB.
 | 2 | `REQ_BODY` | page → CLI | bytes |
 | 3 | `REQ_END` | page → CLI | none; the CLI sends the request now |
 | 4 | `CANCEL` | page → CLI | none |
-| 5 | `RES` | CLI → page | JSON `{"s": status, "t": status text, "h": [[name, value], ...]}` |
+| 5 | `RES` | CLI → page | JSON `{"s": status, "t": status text, "h": [[name, value], ...], "c": [[name, value, path], ...]}`; `c`: every cookie in the visitor's jar that isn't HttpOnly, after this response's |
 | 6 | `RES_BODY` | CLI → page | bytes |
 | 7 | `RES_END` | CLI → page | none |
 | 8 | `WS_OPEN` | page → CLI | JSON `{"u": path and query, "p": [subprotocols]}` |
@@ -63,5 +63,6 @@ at most 16 KiB.
 | 12 | `WS_CLOSE` | both | JSON `{"c": code, "r": reason}` |
 | 13 | `FAIL` | CLI → page | text: why the request couldn't be made |
 | 14 | `BYE` | CLI → page | none, id 0: the link ended |
+| 15 | `COOKIE` | page → CLI | id 0, JSON `{"u": the page's path, "c": what it set}`: `document.cookie = c`. The CLI puts it in the jar (never an HttpOnly one, never over one) before the requests after it |
 
 WebSockets always go to the shared port, whatever host the page asked for.

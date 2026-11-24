@@ -40,11 +40,35 @@ next run gets a new link.
 
 ## Install
 
-Build it from this repository (needs [Rust](https://rustup.rs)):
+On Linux or macOS:
 
 ```
-cargo install --git https://github.com/luannzin/hostline
+curl -fsSL https://hostline.luannzin.com/install.sh | sh
 ```
+
+On Windows, in PowerShell:
+
+```
+irm https://hostline.luannzin.com/install.ps1 | iex
+```
+
+With Node, there's nothing to install: `npx hostline 3000`.
+
+Installed copies keep themselves up to date: when a new version is out, Hostline swaps itself for
+it while it runs, and the next run is the new version. `npx` runs the version npm picks.
+
+Or take the file for your system from the [latest release](https://github.com/luannzin/hostline/releases/latest):
+
+| System | File |
+|---|---|
+| Linux, x86_64 | `hostline-linux-x86_64` |
+| Linux, arm64 | `hostline-linux-arm64` |
+| macOS, Apple silicon and Intel | `hostline-macos` |
+| Windows 10 and 11 | `hostline-windows-x86_64.exe` |
+
+On Linux and macOS it needs `chmod +x`. Downloaded in a browser, macOS stops it until you allow it
+in System Settings, Privacy & Security; the install line doesn't have that problem. With Rust, you
+can also build it: `cargo install --git https://github.com/luannzin/hostline`.
 
 ## How it works
 
@@ -70,9 +94,13 @@ the port you share ◄── hostline (CLI) ◄──────► hostline.lu
   the answer back. A small script added to each page carries the app's WebSockets the same way, and
   keeps the address bar on the app's path, so a link copied from it opens the same page.
 - **What the CLI changes on the way.** It sends `Host` and `Origin` as your port, so dev servers
-  that check them (Vite, Next's Server Actions) accept the request. Cookies live in a jar on your
-  machine, one per visitor, so logins work. Headers that would stop the app from showing in a frame
-  (`X-Frame-Options`, `frame-ancestors`) are dropped.
+  that check them (Vite, Next's Server Actions) accept the request. Headers that would stop the app
+  from showing in a frame (`X-Frame-Options`, `frame-ancestors`) are dropped.
+- **Cookies and storage.** Cookies live in a jar on your machine, one per visitor's browser, kept
+  across reloads until the link ends, so logins work. Cookies a page sets from JavaScript go to the
+  same jar, and `document.cookie` shows what it would in a browser. `localStorage`,
+  `sessionStorage` and IndexedDB belong to the link: the page keeps them apart from every other
+  link's and wipes them when the link ends.
 
 `PROTOCOL.md` has the messages and the frames.
 
@@ -90,14 +118,11 @@ the port you share ◄── hostline (CLI) ◄──────► hostline.lu
 - It connects directly, with public STUN servers. When both sides are behind strict networks (some
   mobile carriers, corporate firewalls), there's no direct path and it doesn't connect. There's no
   relay to fall back on yet.
-- Every link opens on the same address, so apps opened through different links share that
-  browser's storage (`localStorage`, IndexedDB) for it.
-- Cookies a page sets from JavaScript (`document.cookie`) stay in the browser and don't reach your
-  server. Cookies your server sets work.
-- The shared app's own service worker doesn't install.
+- The shared app's own service worker doesn't install, and Cache Storage (`caches`) is shared by
+  every link opened in a browser.
 - The visitor's browser needs service workers, which some private windows turn off.
-- Tested so far in Chrome on Windows and Firefox on Linux, against a static site and a Vite dev server with hot reload.
-  Not measured yet: how much slower a page loads through the line, and how often two networks can't
+- Tested so far in Chrome on Windows and Firefox on Linux, against a static site and a Vite dev
+  server with hot reload, and in Firefox an app with a login cookie. Not measured yet: how much slower a page loads through the line, and how often two networks can't
   connect.
 
 ## Run it yourself

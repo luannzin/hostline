@@ -5,13 +5,15 @@
 //! request or socket it belongs to, then its payload. `PROTOCOL.md` lists them.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use bytes::{BufMut, BytesMut};
 use futures_util::{SinkExt, StreamExt};
-use reqwest::cookie::{CookieStore, Jar};
+use reqwest::Url;
+use reqwest::cookie::CookieStore;
+use reqwest::header::HeaderValue;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
@@ -30,6 +32,7 @@ const REQ_BODY: u8 = 2;
 const REQ_END: u8 = 3;
 const CANCEL: u8 = 4;
 const WS_OPEN: u8 = 8;
+const COOKIE: u8 = 15;
 // host to visitor
 const RES: u8 = 5;
 const RES_BODY: u8 = 6;
@@ -63,11 +66,62 @@ pub enum Note {
     Left(String),
 }
 
+/// One browser's cookies, kept on this machine: what the shared app's server sets, and what its
+/// pages set from JavaScript (`document.cookie`, sent over as `COOKIE`). The browser itself only
+/// keeps a copy of the ones JavaScript may read, refreshed with every response.
+#[derive(Default)]
+pub struct Cookies(Mutex<cookie_store::CookieStore>);
+
+impl Cookies {
+    /// What the page's `document.cookie` may show: every cookie that isn't HttpOnly, as
+    /// (name, value, path). The page picks the ones whose path matches its own.
+    fn visible(&self) -> Vec<(String, String, String)> {
+        let store = self.0.lock().unwrap();
+        store
+            .iter_unexpired()
+            .filter(|c| !c.http_only().unwrap_or(false))
+            .map(|c| (c.name().into(), c.value().into(), String::from(&c.path)))
+            .collect()
+    }
+
+    /// A cookie a page set from JavaScript, at `url`. Like a browser: never an HttpOnly one, and
+    /// never over one.
+    fn set_by_page(&self, cookie: &str, url: &Url) {
+        let Ok(raw) = cookie_store::RawCookie::parse(cookie) else { return };
+        if raw.http_only().unwrap_or(false) {
+            return;
+        }
+        let mut store = self.0.lock().unwrap();
+        let guarded = store.matches(url).iter().any(|c| c.name() == raw.name() && c.http_only().unwrap_or(false));
+        if !guarded {
+            let _ = store.insert_raw(&raw, url);
+        }
+    }
+}
+
+impl CookieStore for Cookies {
+    fn set_cookies(&self, headers: &mut dyn Iterator<Item = &HeaderValue>, url: &Url) {
+        let mut store = self.0.lock().unwrap();
+        for header in headers {
+            if let Ok(text) = header.to_str() {
+                let _ = store.parse(text, url);
+            }
+        }
+    }
+
+    fn cookies(&self, url: &Url) -> Option<HeaderValue> {
+        let store = self.0.lock().unwrap();
+        let pairs: Vec<String> = store.get_request_values(url).map(|(n, v)| format!("{n}={v}")).collect();
+        HeaderValue::from_str(&pairs.join("; ")).ok().filter(|h| !h.is_empty())
+    }
+}
+
 /// Answers one visitor's offer. Returns the connection and the answer, gathered whole (one
 /// signalling message each way, no trickle).
 pub async fn answer(
     offer: String,
     who: String,
+    jar: Arc<Cookies>,
     target: Arc<Target>,
     notes: mpsc::UnboundedSender<Note>,
     ending: watch::Receiver<bool>,
@@ -85,6 +139,7 @@ pub async fn answer(
             .with_handler(Arc::new(Handler {
                 gathered: gathered_tx,
                 who,
+                jar,
                 target,
                 notes,
                 ending,
@@ -104,6 +159,7 @@ pub async fn answer(
 struct Handler {
     gathered: mpsc::Sender<()>,
     who: String,
+    jar: Arc<Cookies>,
     target: Arc<Target>,
     notes: mpsc::UnboundedSender<Note>,
     ending: watch::Receiver<bool>,
@@ -121,8 +177,7 @@ impl PeerConnectionEventHandler for Handler {
         let visit = Visit {
             dc,
             target: self.target.clone(),
-            // one cookie jar per visitor, kept on this machine
-            jar: Arc::new(Jar::default()),
+            jar: self.jar.clone(),
         };
         let (who, notes, ending) = (self.who.clone(), self.notes.clone(), self.ending.clone());
         tokio::spawn(async move {
@@ -151,12 +206,21 @@ struct ResHead {
     s: u16,
     t: String,
     h: Vec<(String, String)>,
+    /// The cookies the page's JavaScript may read, once this response's are in the jar.
+    c: Vec<(String, String, String)>,
 }
 
 #[derive(Deserialize)]
 struct WsOpen {
     u: String,
     p: Vec<String>,
+}
+
+/// `document.cookie = c`, on the page at path `u`.
+#[derive(Deserialize)]
+struct PageCookie {
+    u: String,
+    c: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -175,7 +239,7 @@ enum Stream {
 struct Visit {
     dc: Arc<dyn DataChannel>,
     target: Arc<Target>,
-    jar: Arc<Jar>,
+    jar: Arc<Cookies>,
 }
 
 impl Visit {
@@ -228,6 +292,14 @@ impl Visit {
                             }
                         });
                         streams.insert(id, Stream::Task(task));
+                    }
+                }
+                // in line with the requests, so the next one already carries it
+                COOKIE => {
+                    if let Ok(set) = serde_json::from_slice::<PageCookie>(payload)
+                        && let Ok(url) = format!("{}{}", self.target.http(), set.u).parse()
+                    {
+                        self.jar.set_by_page(&set.c, &url);
                     }
                 }
                 CANCEL => match streams.remove(&id) {
@@ -300,6 +372,7 @@ impl Visit {
         let res = req.body(body).send().await?;
         let head = ResHead {
             s: res.status().as_u16(),
+            c: self.jar.visible(),
             t: res.status().canonical_reason().unwrap_or("").into(),
             h: res
                 .headers()
@@ -447,5 +520,21 @@ mod tests {
     fn splits_frames() {
         assert_eq!(split(&[1, 0, 0, 1, 2, 9]), Some((1, 258, &[9][..])));
         assert_eq!(split(&[1, 0]), None);
+    }
+
+    #[test]
+    fn pages_never_touch_httponly_cookies() {
+        let jar = Cookies::default();
+        let url: Url = "http://127.0.0.1:3000/a".parse().unwrap();
+        let set = [HeaderValue::from_static("sid=abc; HttpOnly"), HeaderValue::from_static("csrf=xyz")];
+        jar.set_cookies(&mut set.iter(), &url);
+        jar.set_by_page("sid=stolen", &url);
+        jar.set_by_page("js=1; HttpOnly", &url);
+        jar.set_by_page("theme=dark; path=/", &url);
+        let mut seen: Vec<String> = jar.visible().into_iter().map(|(n, v, _)| format!("{n}={v}")).collect();
+        seen.sort();
+        assert_eq!(seen, ["csrf=xyz", "theme=dark"]);
+        let sent = jar.cookies(&url).unwrap();
+        assert!(sent.to_str().unwrap().contains("sid=abc"));
     }
 }
