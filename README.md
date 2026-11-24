@@ -96,7 +96,7 @@ the port you share ◄── hostline (CLI) ◄──────► hostline.lu
   server. Cookies your server sets work.
 - The shared app's own service worker doesn't install.
 - The visitor's browser needs service workers, which some private windows turn off.
-- Tested so far in Chrome on Windows, against a static site and a Vite dev server with hot reload.
+- Tested so far in Chrome on Windows and Firefox on Linux, against a static site and a Vite dev server with hot reload.
   Not measured yet: how much slower a page loads through the line, and how often two networks can't
   connect.
 
